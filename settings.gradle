@@ -1,0 +1,2 @@
+include ':app', ':lib1', ':ViewOptAnnotation', ':ViewOptProcessor', ':viewoptapi', ':lib2'
+rootProject.name='TestViewOpt'

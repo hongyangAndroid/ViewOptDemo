@@ -1,0 +1,117 @@
+import groovy.util.slurpersupport.GPathResult
+import groovy.util.slurpersupport.Node
+
+project.afterEvaluate {
+    def mergeDebugResourcesTask = project.tasks.findByName("mergeDebugResources")
+    if (mergeDebugResourcesTask != null) {
+        def resParseDebugTask = project.tasks.create("ResParseDebugTask", ResParseTask.class)
+        resParseDebugTask.isDebug = true
+        mergeDebugResourcesTask.finalizedBy(resParseDebugTask);
+    }
+
+}
+
+
+class ResParseTask extends DefaultTask {
+    File viewNameListFile
+    boolean isDebug
+    HashSet<String> viewSet = new HashSet<>()
+    // 自己根据输出几个添加
+    List<String> ignoreViewNameList = Arrays.asList("include", "fragment", "merge", "view","DateTimeView")
+
+    @TaskAction
+    void doTask() {
+
+        File distDir = new File(project.buildDir, "tmp_custom_views")
+        if (!distDir.exists()) {
+            distDir.mkdirs()
+        }
+        viewNameListFile = new File(distDir, "custom_view_final.txt")
+        if (viewNameListFile.exists()) {
+            viewNameListFile.delete()
+        }
+        viewNameListFile.createNewFile()
+        viewSet.clear()
+        viewSet.addAll(ignoreViewNameList)
+
+        try {
+            File resMergeFile = new File(project.buildDir, "/intermediates/incremental/merge" + (isDebug ? "Debug" : "Release") + "Resources/merger.xml")
+
+            println("resMergeFile： ${resMergeFile.getAbsolutePath()} === ${resMergeFile.exists()}")
+
+            if (!resMergeFile.exists()) {
+                return
+            }
+
+            XmlSlurper slurper = new XmlSlurper()
+            GPathResult result = slurper.parse(resMergeFile)
+            if (result.children() != null) {
+                result.childNodes().forEachRemaining({ o ->
+                    if (o instanceof Node) {
+                        parseNode(o)
+                    }
+                })
+            }
+
+
+        } catch (Throwable e) {
+            e.printStackTrace()
+        }
+
+    }
+
+    void parseNode(Node node) {
+        if (node == null) {
+            return
+        }
+        if (node.name() == "file" && node.attributes.get("type") == "layout") {
+            String layoutPath = node.attributes.get("path")
+            try {
+                XmlSlurper slurper = new XmlSlurper()
+                GPathResult result = slurper.parse(layoutPath)
+
+                String viewName = result.name();
+                if (viewSet.add(viewName)) {
+                    viewNameListFile.append("${viewName}\n")
+                }
+                if (result.children() != null) {
+                    result.childNodes().forEachRemaining({ o ->
+                        if (o instanceof Node) {
+                            parseLayoutNode(o)
+                        }
+                    })
+                }
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
+
+        } else {
+            node.childNodes().forEachRemaining({ o ->
+                if (o instanceof Node) {
+                    parseNode(o)
+                }
+            })
+        }
+
+    }
+
+    void parseLayoutNode(Node node) {
+        if (node == null) {
+            return
+        }
+        String viewName = node.name()
+        if (viewSet.add(viewName)) {
+            viewNameListFile.append("${viewName}\n")
+        }
+        if (node.childNodes().size() <= 0) {
+            return
+        }
+        node.childNodes().forEachRemaining({ o ->
+            if (o instanceof Node) {
+                parseLayoutNode(o)
+            }
+        })
+    }
+
+
+}
